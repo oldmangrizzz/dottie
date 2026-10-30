@@ -28,6 +28,10 @@ class OllamaCloudAdapter:
 
     def respond(self, req):
         self.last_receipt = {}
+        if (getattr(req, "sensitivity", None) != "public"
+                or getattr(req, "external_approval", None) is not True
+                or getattr(req, "export_approval", None) is not True):
+            raise PermissionError("Cloud export requires public classification and two explicit approvals")
         if not isinstance(req.input_text, str) or not req.input_text.strip():
             raise ValueError("Nonempty input text required")
         body = json.dumps({"model": self.model, "stream": False,

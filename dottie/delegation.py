@@ -4,6 +4,9 @@ import sqlite3
 import time
 import uuid
 
+DELEGATABLE_PERMISSIONS = frozenset({'agents:dispatch'})
+
+
 class Delegations:
     def __init__(self, path):
         self.db = sqlite3.connect(path)

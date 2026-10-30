@@ -69,7 +69,7 @@ class JobQueue:
             AND lease_token=? AND lease_until>=?""",
             ("queued" if retry else "failed", str(error), job_id, lease_token, time.time()))
         if cursor.rowcount != 1:
-            raise ValueError("job is not running")
+            raise PermissionError("job lease is not current")
 
     def status(self, job_id):
         row = self.db.execute("""SELECT state,attempts,result,error FROM jobs

@@ -34,6 +34,9 @@ class DottieRuntime:
     def register_agent(self, agent_id, handler):
         if not isinstance(agent_id, str) or not agent_id.strip() or not callable(handler):
             raise ValueError("agent identity and callable handler required")
+        agent = self.agents.get(agent_id)
+        if not agent or not agent["enabled"]:
+            raise LookupError("unknown or disabled agent")
         if agent_id in self.handlers:
             raise ValueError("agent already registered")
         self.handlers[agent_id] = handler
@@ -71,8 +74,13 @@ class DottieRuntime:
             result = handler(job["payload"]["input"])
             self.jobs.finish(job["id"], result, job["lease_token"])
             return {"id": job["id"], "state": "completed", "result": result}
+        except PermissionError as exc:
+            return {"id": job["id"], "state": "lease_lost", "error": str(exc)}
         except Exception as exc:
-            self.jobs.fail(job["id"], str(exc), lease_token=job["lease_token"])
+            try:
+                self.jobs.fail(job["id"], str(exc), lease_token=job["lease_token"])
+            except PermissionError:
+                return {"id": job["id"], "state": "lease_lost", "error": str(exc)}
             return {"id": job["id"], "state": "failed", "error": str(exc)}
 
     def close(self):

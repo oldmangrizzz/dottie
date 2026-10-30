@@ -22,7 +22,7 @@ class DurableSystemsTests(unittest.TestCase):
         q = JobQueue(self.path)
         job = q.claim()
         self.assertEqual(job["id"], first)
-        q.finish(first, {"ok": True})
+        q.finish(first, {"ok": True}, job["lease_token"])
         self.assertEqual(q.status(first)["result"], {"ok": True})
         self.assertIsNone(q.claim())
         q.close()

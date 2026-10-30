@@ -15,7 +15,23 @@ class EvidenceLedger:
             digest TEXT NOT NULL, status TEXT NOT NULL, value_json TEXT NOT NULL,
             recorded_at REAL NOT NULL)""")
         self.db.execute("CREATE INDEX IF NOT EXISTS evidence_claim_idx ON evidence(claim_id)")
+        self.db.execute("""CREATE TABLE IF NOT EXISTS evidence_integrity (
+            evidence_id TEXT PRIMARY KEY, record_hash TEXT NOT NULL)""")
         self.db.commit()
+
+    @staticmethod
+    def _record_hash(fields):
+        return hashlib.sha256(json.dumps(fields, separators=(",", ":"),
+                                         ensure_ascii=False).encode("utf-8")).hexdigest()
+
+    def verify_integrity(self):
+        rows = self.db.execute("""SELECT id,claim_id,source_id,digest,status,
+            value_json,recorded_at FROM evidence""").fetchall()
+        seals = dict(self.db.execute(
+            "SELECT evidence_id,record_hash FROM evidence_integrity"))
+        if len(rows) != len(seals):
+            return False
+        return all(seals.get(row[0]) == self._record_hash(row) for row in rows)
 
     def append(self, claim_id, source_id, source_content, status, value):
         if not claim_id or not source_id or not isinstance(source_content, (str, bytes)):
@@ -24,10 +40,12 @@ class EvidenceLedger:
             raise ValueError("unsupported evidence status")
         raw = source_content.encode("utf-8") if isinstance(source_content, str) else source_content
         record_id = str(uuid.uuid4())
+        row = (record_id, claim_id, source_id, hashlib.sha256(raw).hexdigest(),
+               status, json.dumps(value), time.time())
         with self.db:
-            self.db.execute("INSERT INTO evidence VALUES (?,?,?,?,?,?,?)",
-                (record_id, claim_id, source_id, hashlib.sha256(raw).hexdigest(),
-                 status, json.dumps(value), time.time()))
+            self.db.execute("INSERT INTO evidence VALUES (?,?,?,?,?,?,?)", row)
+            self.db.execute("INSERT INTO evidence_integrity VALUES (?,?)",
+                            (record_id, self._record_hash(row)))
         return record_id
 
     def history(self, claim_id):

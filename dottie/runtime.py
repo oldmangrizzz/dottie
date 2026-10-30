@@ -56,10 +56,10 @@ class DottieRuntime:
             if handler is None:
                 raise LookupError("agent handler unavailable")
             result = handler(job["payload"]["input"])
-            self.jobs.finish(job["id"], result)
+            self.jobs.finish(job["id"], result, job["lease_token"])
             return {"id": job["id"], "state": "completed", "result": result}
         except Exception as exc:
-            self.jobs.fail(job["id"], str(exc))
+            self.jobs.fail(job["id"], str(exc), lease_token=job["lease_token"])
             return {"id": job["id"], "state": "failed", "error": str(exc)}
 
     def close(self):

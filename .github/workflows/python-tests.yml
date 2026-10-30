@@ -1,0 +1,26 @@
+name: Dottie Python verification
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Compile all Python modules
+        run: python -m compileall -q dottie tests
+      - name: Run complete unittest suite
+        run: python -m unittest discover -s tests -v
+      - name: Run top-level core regression
+        run: python -m unittest -v test_dottie_core

@@ -10,7 +10,10 @@ from pathlib import Path
 
 
 class ExperienceStore:
-    def __init__(self, path):
+    def __init__(self, path, approval_validator=None):
+        if approval_validator is not None and not callable(approval_validator):
+            raise TypeError('Approval validator must be callable')
+        self.approval_validator = approval_validator
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(self.path)
@@ -39,6 +42,8 @@ class ExperienceStore:
     def promote(self, owner, event_id, review_receipt):
         if not isinstance(review_receipt, str) or not review_receipt.strip():
             raise PermissionError("Review receipt required")
+        if self.approval_validator is None or self.approval_validator(owner, event_id, review_receipt) is not True:
+            raise PermissionError('Approval receipt not independently validated')
         with self.db:
             row = self.db.execute(
                 "SELECT owner,kind,promoted FROM experience WHERE id=?", (event_id,)

@@ -68,6 +68,17 @@ class DottieRuntime:
         if job is None:
             return None
         try:
+            payload = job["payload"]
+            actor = payload.get("submitted_by")
+            if not self.identity.allowed(actor, "agents:dispatch"):
+                raise ValueError("dispatch authorization no longer valid")
+            if not self.memberships.allowed(job["agent"], actor, "dispatch"):
+                raise ValueError("agent membership no longer valid")
+            principal = payload.get("on_behalf_of")
+            if principal is not None and not self.delegations.allowed(
+                principal, actor, job["agent"], "agents:dispatch"
+            ):
+                raise ValueError("delegation no longer valid")
             handler = self.handlers.get(job["agent"])
             if handler is None:
                 raise LookupError("agent handler unavailable")

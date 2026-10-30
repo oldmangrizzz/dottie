@@ -1,0 +1,55 @@
+"""Append-only evidence ledger with source digests and conflict preservation."""
+import hashlib
+import json
+import sqlite3
+import time
+import uuid
+
+STATUSES = frozenset({"verified", "calculated", "user-reported", "disputed"})
+
+class EvidenceLedger:
+    def __init__(self, path):
+        self.db = sqlite3.connect(path)
+        self.db.execute("""CREATE TABLE IF NOT EXISTS evidence (
+            id TEXT PRIMARY KEY, claim_id TEXT NOT NULL, source_id TEXT NOT NULL,
+            digest TEXT NOT NULL, status TEXT NOT NULL, value_json TEXT NOT NULL,
+            recorded_at REAL NOT NULL)""")
+        self.db.execute("CREATE INDEX IF NOT EXISTS evidence_claim_idx ON evidence(claim_id)")
+        self.db.commit()
+
+    def append(self, claim_id, source_id, source_content, status, value):
+        if not claim_id or not source_id or not isinstance(source_content, (str, bytes)):
+            raise ValueError("claim, source and source content required")
+        if status not in STATUSES:
+            raise ValueError("unsupported evidence status")
+        raw = source_content.encode("utf-8") if isinstance(source_content, str) else source_content
+        record_id = str(uuid.uuid4())
+        with self.db:
+            self.db.execute("INSERT INTO evidence VALUES (?,?,?,?,?,?,?)",
+                (record_id, claim_id, source_id, hashlib.sha256(raw).hexdigest(),
+                 status, json.dumps(value), time.time()))
+        return record_id
+
+    def history(self, claim_id):
+        if not claim_id:
+            raise ValueError("claim required")
+        rows = self.db.execute("""SELECT id,source_id,digest,status,value_json,recorded_at
+            FROM evidence WHERE claim_id=? ORDER BY recorded_at,id""", (claim_id,)).fetchall()
+        return [{"id":r[0], "source_id":r[1], "digest":r[2], "status":r[3],
+                 "value":json.loads(r[4]), "recorded_at":r[5]} for r in rows]
+
+    def reconcile(self, claim_id):
+        records = self.history(claim_id)
+        if not records:
+            return {"state": "missing", "records": []}
+        distinct = {json.dumps(r["value"], sort_keys=True) for r in records}
+        return {"state": "unresolved" if len(distinct) > 1 else "consistent",
+                "records": records}
+
+    @staticmethod
+    def verify_source(record, content):
+        raw = content.encode("utf-8") if isinstance(content, str) else content
+        return hashlib.sha256(raw).hexdigest() == record["digest"]
+
+    def close(self):
+        self.db.close()

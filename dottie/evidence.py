@@ -33,6 +33,25 @@ class EvidenceLedger:
             return False
         return all(seals.get(row[0]) == self._record_hash(row) for row in rows)
 
+    def migrate_legacy_seals(self, allow_unverified_baseline=False):
+        """Explicitly baseline existing records, not attest to their historical truth.
+
+        Use only after external review of legacy data. A baseline cannot prove
+        the rows were not altered before the migration.
+        """
+        if not allow_unverified_baseline:
+            raise PermissionError("explicit acceptance of an unverified baseline required")
+        rows = self.db.execute("""SELECT id,claim_id,source_id,digest,status,
+            value_json,recorded_at FROM evidence""").fetchall()
+        existing = set(row[0] for row in self.db.execute(
+            "SELECT evidence_id FROM evidence_integrity"))
+        missing = [row for row in rows if row[0] not in existing]
+        with self.db:
+            self.db.executemany(
+                "INSERT INTO evidence_integrity VALUES (?,?)",
+                [(row[0], self._record_hash(row)) for row in missing])
+        return len(missing)
+
     def append(self, claim_id, source_id, source_content, status, value):
         if not claim_id or not source_id or not isinstance(source_content, (str, bytes)):
             raise ValueError("claim, source and source content required")

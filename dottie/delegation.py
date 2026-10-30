@@ -20,6 +20,8 @@ class Delegations:
             raise ValueError("invalid delegation")
         if not permissions or not all(isinstance(p, str) and p.strip() for p in permissions):
             raise ValueError("permissions required")
+        if not set(permissions).issubset(DELEGATABLE_PERMISSIONS):
+            raise ValueError("unsupported delegated permission")
         for user_id in (principal, delegate):
             if not self.db.execute("SELECT 1 FROM users WHERE id=? AND active=1", (user_id,)).fetchone():
                 raise LookupError("unknown active user")

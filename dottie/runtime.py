@@ -3,6 +3,8 @@ from .identity import IdentityStore
 from .jobs import JobQueue
 from .evidence import EvidenceLedger
 from .memory import ScopedMemory
+from .aegis import AgentRegistry
+from .memberships import AgentMemberships
 
 class DottieRuntime:
     def __init__(self, database_path):
@@ -10,6 +12,8 @@ class DottieRuntime:
         self.jobs = JobQueue(database_path)
         self.evidence = EvidenceLedger(database_path)
         self.memory = ScopedMemory(database_path)
+        self.agents = AgentRegistry(database_path)
+        self.memberships = AgentMemberships(database_path)
         self.handlers = {}
 
     def register_agent(self, agent_id, handler):
@@ -24,6 +28,8 @@ class DottieRuntime:
             raise PermissionError("dispatch permission denied")
         if agent_id not in self.handlers:
             raise LookupError("agent is not registered")
+        if not self.memberships.allowed(agent_id, user_id, "dispatch"):
+            raise PermissionError("agent membership dispatch denied")
         return self.jobs.submit(agent_id, {"submitted_by": user_id, "input": payload}, idempotency_key)
 
     def run_next(self):
@@ -42,6 +48,8 @@ class DottieRuntime:
             return {"id": job["id"], "state": "failed", "error": str(exc)}
 
     def close(self):
+        self.memberships.close()
+        self.agents.close()
         self.memory.close()
         self.evidence.close()
         self.jobs.close()

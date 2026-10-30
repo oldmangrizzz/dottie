@@ -33,6 +33,20 @@ class EvidenceLedger:
             return False
         return all(seals.get(row[0]) == self._record_hash(row) for row in rows)
 
+    def _require_valid_sealed_rows(self):
+        """Reject corruption in records already carrying integrity seals."""
+        rows = self.db.execute("""SELECT e.id,e.claim_id,e.source_id,e.digest,
+            e.status,e.value_json,e.recorded_at,i.record_hash
+            FROM evidence e JOIN evidence_integrity i ON i.evidence_id=e.id""")
+        for row in rows:
+            if self._record_hash(row[:7]) != row[7]:
+                raise ValueError("sealed evidence integrity violation")
+        orphan = self.db.execute("""SELECT 1 FROM evidence_integrity i
+            LEFT JOIN evidence e ON e.id=i.evidence_id
+            WHERE e.id IS NULL LIMIT 1""").fetchone()
+        if orphan:
+            raise ValueError("orphaned evidence integrity seal")
+
     def migrate_legacy_seals(self, allow_unverified_baseline=False):
         """Explicitly baseline existing records, not attest to their historical truth.
 
@@ -41,6 +55,7 @@ class EvidenceLedger:
         """
         if not allow_unverified_baseline:
             raise PermissionError("explicit acceptance of an unverified baseline required")
+        self._require_valid_sealed_rows()
         rows = self.db.execute("""SELECT id,claim_id,source_id,digest,status,
             value_json,recorded_at FROM evidence""").fetchall()
         existing = set(row[0] for row in self.db.execute(
@@ -57,6 +72,8 @@ class EvidenceLedger:
             raise ValueError("claim, source and source content required")
         if status not in STATUSES:
             raise ValueError("unsupported evidence status")
+        if not self.verify_integrity():
+            raise ValueError("existing evidence integrity violation")
         raw = source_content.encode("utf-8") if isinstance(source_content, str) else source_content
         record_id = str(uuid.uuid4())
         row = (record_id, claim_id, source_id, hashlib.sha256(raw).hexdigest(),

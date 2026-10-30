@@ -17,7 +17,12 @@ class JobQueue:
             id TEXT PRIMARY KEY, idempotency_key TEXT UNIQUE NOT NULL,
             agent TEXT NOT NULL, payload TEXT NOT NULL,
             state TEXT NOT NULL, lease_until REAL,
-            result TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0)""")
+            result TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0,
+            lease_token TEXT)""")
+
+        columns = {row[1] for row in self.db.execute("PRAGMA table_info(jobs)")}
+        if "lease_token" not in columns:
+            self.db.execute("ALTER TABLE jobs ADD COLUMN lease_token TEXT")
 
     def submit(self, agent, payload, idempotency_key):
         if not agent or not idempotency_key:
@@ -33,6 +38,7 @@ class JobQueue:
         if lease_seconds <= 0:
             raise ValueError("positive lease required")
         now = time.time()
+        token = str(uuid.uuid4())
         self.db.execute("BEGIN IMMEDIATE")
         try:
             row = self.db.execute("""SELECT id,agent,payload,attempts FROM jobs
@@ -40,26 +46,28 @@ class JobQueue:
                 ORDER BY rowid LIMIT 1""", (now,)).fetchone()
             if row:
                 self.db.execute("""UPDATE jobs SET state='running',
-                    lease_until=?, attempts=attempts+1 WHERE id=?""",
-                    (now + lease_seconds, row[0]))
+                    lease_until=?, lease_token=?, attempts=attempts+1 WHERE id=?""",
+                    (now + lease_seconds, token, row[0]))
             self.db.execute("COMMIT")
         except BaseException:
             self.db.execute("ROLLBACK")
             raise
         return ({"id":row[0], "agent":row[1], "payload":json.loads(row[2]),
-                 "attempts":row[3]+1} if row else None)
+                 "attempts":row[3]+1, "lease_token":token} if row else None)
 
-    def finish(self, job_id, result):
+    def finish(self, job_id, result, lease_token):
         cursor = self.db.execute("""UPDATE jobs SET state='completed',
-            result=?, lease_until=NULL WHERE id=? AND state='running'""",
-            (json.dumps(result), job_id))
+            result=?, lease_until=NULL, lease_token=NULL
+            WHERE id=? AND state='running' AND lease_token=? AND lease_until>=?""",
+            (json.dumps(result), job_id, lease_token, time.time()))
         if cursor.rowcount != 1:
-            raise ValueError("job is not running")
+            raise PermissionError("job lease is not current")
 
-    def fail(self, job_id, error, retry=False):
+    def fail(self, job_id, error, retry=False, lease_token=None):
         cursor = self.db.execute("""UPDATE jobs SET state=?, error=?,
-            lease_until=NULL WHERE id=? AND state='running'""",
-            ("queued" if retry else "failed", str(error), job_id))
+            lease_until=NULL, lease_token=NULL WHERE id=? AND state='running'
+            AND lease_token=? AND lease_until>=?""",
+            ("queued" if retry else "failed", str(error), job_id, lease_token, time.time()))
         if cursor.rowcount != 1:
             raise ValueError("job is not running")
 

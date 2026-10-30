@@ -87,6 +87,8 @@ class EvidenceLedger:
     def history(self, claim_id):
         if not claim_id:
             raise ValueError("claim required")
+        if not self.verify_integrity():
+            raise ValueError("existing evidence integrity violation")
         rows = self.db.execute("""SELECT id,source_id,digest,status,value_json,recorded_at
             FROM evidence WHERE claim_id=? ORDER BY recorded_at,id""", (claim_id,)).fetchall()
         return [{"id":r[0], "source_id":r[1], "digest":r[2], "status":r[3],

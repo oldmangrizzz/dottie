@@ -6,6 +6,10 @@ from .memory import ScopedMemory
 from .aegis import AgentRegistry
 from .memberships import AgentMemberships
 from .delegation import Delegations
+from .relationships import AgentRelationships
+from .collaboration import CollaborationJournal
+from .messaging import AgentMessages
+from .agent_memory import AgentMemory
 
 class DottieRuntime:
     def __init__(self, database_path):
@@ -16,7 +20,16 @@ class DottieRuntime:
         self.agents = AgentRegistry(database_path)
         self.memberships = AgentMemberships(database_path)
         self.delegations = Delegations(database_path)
+        self.relationships = AgentRelationships(database_path)
+        self.collaboration = CollaborationJournal(database_path)
+        self.messages = AgentMessages(database_path)
         self.handlers = {}
+
+    def agent_memory(self, agent_id):
+        agent = self.agents.get(agent_id)
+        if not agent or not agent['enabled']:
+            raise LookupError('unknown or disabled agent')
+        return AgentMemory(self.memory, agent_id)
 
     def register_agent(self, agent_id, handler):
         if not isinstance(agent_id, str) or not agent_id.strip() or not callable(handler):
@@ -63,6 +76,9 @@ class DottieRuntime:
             return {"id": job["id"], "state": "failed", "error": str(exc)}
 
     def close(self):
+        self.messages.close()
+        self.collaboration.close()
+        self.relationships.close()
         self.delegations.close()
         self.memberships.close()
         self.agents.close()

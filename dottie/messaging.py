@@ -6,6 +6,7 @@ grant capabilities, or carry executable instructions through this transport.
 import sqlite3
 import time
 import uuid
+from .transport import NaturalLanguageEnvelope
 
 PRINCIPAL_ID = "dottie"
 
@@ -23,12 +24,7 @@ class AgentMessages:
         self.db.commit()
 
     def send(self, sender, recipient, text):
-        if not isinstance(text, str):
-            raise TypeError("messages must be natural-language text")
-        if not text.strip() or len(text) > 16000 or any(ord(c) < 32 and c not in "\n\t" for c in text):
-            raise ValueError("invalid message text")
-        if sender == recipient:
-            raise ValueError("sender and recipient must differ")
+        envelope = NaturalLanguageEnvelope(sender, recipient, text)
         for agent_id in (sender, recipient):
             row = (1,) if agent_id == PRINCIPAL_ID else self.db.execute("SELECT enabled FROM aegis_agents WHERE id=?",
                                   (agent_id,)).fetchone()

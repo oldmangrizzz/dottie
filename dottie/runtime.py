@@ -85,8 +85,6 @@ class DottieRuntime:
             result = handler(job["payload"]["input"])
             self.jobs.finish(job["id"], result, job["lease_token"])
             return {"id": job["id"], "state": "completed", "result": result}
-        except PermissionError as exc:
-            return {"id": job["id"], "state": "lease_lost", "error": str(exc)}
         except Exception as exc:
             try:
                 self.jobs.fail(job["id"], str(exc), lease_token=job["lease_token"])

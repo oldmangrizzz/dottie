@@ -79,6 +79,9 @@ class DottieRuntime:
                 principal, actor, job["agent"], "agents:dispatch"
             ):
                 raise ValueError("delegation no longer valid")
+            agent = self.agents.get(job["agent"])
+            if not agent or not agent["enabled"]:
+                raise ValueError("agent disabled or unavailable")
             handler = self.handlers.get(job["agent"])
             if handler is None:
                 raise LookupError("agent handler unavailable")

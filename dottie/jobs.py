@@ -27,11 +27,15 @@ class JobQueue:
     def submit(self, agent, payload, idempotency_key):
         if not agent or not idempotency_key:
             raise ValueError("agent and idempotency key required")
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
         self.db.execute("""INSERT OR IGNORE INTO jobs
             (id,idempotency_key,agent,payload,state) VALUES (?,?,?,?,?)""",
-            (str(uuid.uuid4()), idempotency_key, agent, json.dumps(payload), "queued"))
+            (str(uuid.uuid4()), idempotency_key, agent, encoded, "queued"))
         row = self.db.execute(
-            "SELECT id FROM jobs WHERE idempotency_key=?", (idempotency_key,)).fetchone()
+            "SELECT id,agent,payload FROM jobs WHERE idempotency_key=?",
+            (idempotency_key,)).fetchone()
+        if row[1] != agent or json.loads(row[2]) != payload:
+            raise ValueError("idempotency key already belongs to different work")
         return row[0]
 
     def claim(self, lease_seconds=60):
